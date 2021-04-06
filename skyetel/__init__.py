@@ -1,2 +1,2 @@
-from skyetel import skyetel
-__all__ = ['skyetel']
+from .skyetel import Skyetel
+__all__ = ['Skyetel']
