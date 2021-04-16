@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import List
 from . import errors
@@ -280,6 +280,9 @@ class PhoneNumberUpdate:
     tenant_id: int = None
     localpresence_id: int = None
 
+    def as_dict(self):
+        return {k: v for k, v in asdict(self).items() if v is not None}
+
 
 @dataclass
 class PhoneNumberFilter:
@@ -427,3 +430,94 @@ class ChannelCount:
 class CallCount:
     date: datetime
     call_count: int
+
+
+@dataclass(frozen=True)
+class TenantPhoneNumberTotals:
+    tollfree: int
+    tollfree_cost: float
+    tollfree_cost_total: float
+    local: int
+    local_cost: float
+    local_cost_total: float
+    vanity: int
+    message_enabled: int
+    message_enabled_cost: float
+    e911_enabled: int
+    e911_enabled_cost: int
+    cnam_enabled: int
+
+
+@dataclass(frozen=True)
+class TenantStatementTotals:
+    outbound_conversational_minutes: float
+    outbound_highcost_minutes: float
+    outbound_highcost_cost: float
+    outbound_conversational_cost: float
+    dialer_traffic_minutes: float
+    dialer_traffic_cost: float
+    outbound_local_presence_traffic_minutes: float
+    outbound_local_presence_traffic_cost: float
+    outbound_pre_tax: float
+    outbound_subtotal: float
+    outbound_total: float
+    outbound_minutes: float
+    outbound_calls_count: int
+    inbound_conversational_minutes: float
+    inbound_conversational_cost: float
+    cnam_count: int
+    spamblock_count: int
+    cnam_cost: float
+    spamblock_cost: float
+    inbound_local_presence_traffic_minutes: float
+    inbound_local_presence_traffic_cost: float
+    inbound_toll_free_traffic_minutes: float
+    inbound_toll_free_traffic_cost: float
+    inbound_pre_tax: float
+    inbound_subtotal: float
+    inbound_total: float
+    inbound_minutes: float
+    inbound_calls_count: int
+    transcription_cost: float
+    transcription_count: int
+    audio_recording_cost: float
+    audio_recording_count: int
+    audio_transcription_cost: float
+    audio_transcription_count: int
+    vfax_cost: float
+    vfax_count: int
+    received_sms_cost: float
+    received_sms_count: int
+    sent_sms_cost: float
+    sent_sms_count: int
+    received_mms_cost: float
+    received_mms_count: int
+    sent_mms_cost: float
+    sent_mms_count: int
+    phone_numbers: TenantPhoneNumberTotals
+    channel_count: int
+    total_sms_mms_cost: float
+    total_features_cost: float
+    total_phonenumber_cost: float
+    subtotal: float
+    total_cost: float
+
+
+@dataclass(frozen=True)
+class TenantStatement:
+    id: int
+    month: datetime
+    org: Organization
+    tenant: Tenant
+    totals: TenantStatementTotals
+
+
+@dataclass(frozen=True)
+class TenantInvoice:
+    id: int
+    invoice_number: str
+    invoice_url: str
+    invoice_status: str
+    scheduled_date: datetime
+    stripe_invoice_id: str
+
