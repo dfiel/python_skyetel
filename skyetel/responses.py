@@ -282,7 +282,7 @@ class PhoneNumberUpdate:
 
 
 @dataclass
-class AvailablePhoneNumberFilter:
+class PhoneNumberFilter:
     states: List[str] = field(default_factory=list)
     npas: List[int] = field(default_factory=list)
     nxxs: List[int] = field(default_factory=list)
@@ -321,3 +321,109 @@ class AvailablePhoneNumberFilter:
                   "NPANXX (first six digits)\n rateCenter is specified\n city and province are specified (without a " \
                   "radius)\n postal Code is specified (without a radius) "
             raise errors.DataValidityError(err)
+
+    def params(self):
+        self.validate()
+        params = '?'
+        if self.states:
+            for state in self.states:
+                params += 'filter[states][]={}&'.format(str(state))
+        if self.npas:
+            for npa in self.npas:
+                params += 'filter[npas][]={}&'.format(str(npa))
+        if self.nxxs:
+            for nxx in self.nxxs:
+                params += 'filter[nxxs][]={}&'.format(str(nxx))
+        if self.category:
+            params += 'filter[category]={}&'.format(str(self.category))
+        if self.quantity:
+            params += 'filter[quantity]={}&'.format(str(self.quantity))
+        if self.tnMask:
+            params += 'filter[tnMask]={}&'.format(str(self.tnMask))
+        if self.tnWildcard:
+            params += 'filter[tnWildcard]={}&'.format(str(self.tnWildcard))
+        if self.lata:
+            params += 'filter[lata]={}&'.format(str(self.lata))
+        if self.rateCenter:
+            params += 'filter[rateCenter]={}&'.format(str(self.rateCenter))
+        if self.sequential:
+            params += 'filter[sequential]={}&'.format(str(self.sequential).lower())
+        if self.province:
+            params += 'filter[province]={}&'.format(str(self.province))
+        if self.city:
+            params += 'filter[city]={}&'.format(str(self.city))
+        if self.postalCode:
+            params += 'filter[postalCode]={}&'.format(str(self.postalCode))
+        if self.radius:
+            params += 'filter[radius]={}&'.format(str(self.radius))
+        if self.localCallingArea:
+            params += 'filter[localCallingArea]={}'.format(str(self.localCallingArea).lower())
+        return params
+
+
+@dataclass(frozen=True)
+class RateCenter:
+    rateCenter: str
+    market: str
+    lata: int
+
+
+@dataclass(frozen=True)
+class NumberPurchase:
+    number: str
+    mou: int
+
+
+@dataclass(frozen=True)
+class SMSMessage:
+    id: int
+    org: ExtendedOrganization
+    time: datetime
+    flag_attachment: bool
+    flag_delivered: bool
+    from_phonenumber: str
+    to_phonenumber: str
+    fwd_to_phonenumber: str
+    fwd_to_email: str
+    src_tenant_id: int
+    dst_tenant_id: int
+    cost: float
+    delivery_state: str
+
+
+@dataclass(frozen=True)
+class EndpointHealth:
+    ip: str
+    transport: str
+    description: str
+    alert: bool
+    monitor: bool
+    enhanced_monitor: bool
+    channel_threshold: int
+    org_name: str
+    region1: int
+    region2: int
+    region3: int
+    region4: int
+
+
+@dataclass(frozen=True)
+class TrafficCount:
+    date: datetime
+    inbound_minutes: int
+    outbound_minutes: int
+    inbound_count: int
+    outbound_count: int
+    total_billing_cost: float
+
+
+@dataclass(frozen=True)
+class ChannelCount:
+    date: datetime
+    channel_count: int
+
+
+@dataclass(frozen=True)
+class CallCount:
+    date: datetime
+    call_count: int

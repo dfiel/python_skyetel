@@ -175,7 +175,8 @@ class Skyetel:
         response = responses.E911Address(**response)
         return response
 
-    def update_phonenumber_e911(self, phonenumber_id: int, caller_name, address1, address2, community, state, postal_code):
+    def update_phonenumber_e911(self, phonenumber_id: int, caller_name, address1, address2, community, state,
+                                postal_code):
         parameters = {'caller_name': caller_name, 'address1': address1, 'address2': address2, 'community': community,
                       'state': state, 'postal_code': postal_code}
         response = self.__make_api_request('PATCH', self.__url.phonenumber_e911address_url(phonenumber_id),
@@ -227,4 +228,116 @@ class Skyetel:
         data = asdict(update_data)
         response = self.__make_api_request('PATCH', self.__url.phonenumber_url(phonenumber_id), data=data)
         response = responses.PhoneNumberUpdate(**response)
+        return response
+
+    def get_available_phonenumbers(self, search_filter: responses.PhoneNumberFilter = None):
+        params = ''
+        if search_filter:
+            params = search_filter.params()
+        response = self.__make_api_request('GET', self.__url.phonenumbers_ordersearch_url() + params)
+        return response
+
+    def get_rate_centers(self, state: str = None):
+        params = ''
+        if state:
+            params = '?state={}'.format(state)
+        response = self.__make_api_request('GET', self.__url.phonenumbers_ratecenters_url() + params)
+        for x in range(0, len(response)):
+            response[x] = responses.RateCenter(**response[x])
+        return response
+
+    def order_phonenumbers(self, number_list: List[responses.NumberPurchase]):
+        data = {}
+        for num in number_list:
+            data['numbers[{}][mou]'.format(num.number)] = num.mou
+        response = self.__make_api_request('POST', self.__url.phonenumbers_order_url(), data=data)
+        for x in range(0, len(response)):
+            response[x] = responses.PhoneNumberUpdate(**response[x])
+        return response
+
+    def get_local_phonunumbers_count(self):
+        response = self.__make_api_request('GET', self.__url.phonenumbers_localcount_url())
+        return int(response['TOTAL'])
+
+    def get_tollfree_phonenumbers_count(self):
+        response = self.__make_api_request('GET', self.__url.phonenumbers_tfcount_url())
+        return int(response['TOTAL'])
+
+    def get_sms_receipts(self, items_per_page=10, page_offset=0, query: str = None, search: Dict = None,
+                         sort: List = None):
+        parameters = '?page[limit]={}&page[offset]={}'.format(items_per_page, page_offset)
+        if query:
+            parameters += '&filter[query]={}'.format(query)
+        if search:
+            for field in search:
+                parameters += '&filter[{}]={}'.format(field, search[field])
+        if sort:
+            parameters += '&sort={}'.format(sort[0])
+            for x in range(1, len(sort)):
+                parameters += ',{}'.format(sort[x])
+        response = self.__make_api_request('GET', self.__url.smsreceipts_url() + parameters)
+        for x in range(0, len(response)):
+            response[x]['time'] = datetime.strptime(response[x]['time'], SKYETEL_DATESTRING)
+            response[x]['cost'] = float(response[x]['cost'])
+            response[x]['org']['account_number'] = int(response[x]['org']['account_number'])
+            response[x]['org']['support_pin'] = int(response[x]['org']['support_pin'])
+            response[x]['org']['balance'] = float(response[x]['org']['balance'])
+            response[x]['org']['auto_recharge_reserve'] = float(response[x]['org']['auto_recharge_reserve'])
+            response[x]['org'] = responses.ExtendedOrganization(**response[x]['org'])
+            response[x] = responses.SMSMessage(**response[x])
+        return response
+
+    def get_endpoint_health(self, items_per_page: int = 10, page_offset: int = 0):
+        parameters = '?page[limit]={}&page[offset]={}'.format(items_per_page, page_offset)
+        response = self.__make_api_request('GET', self.__url.endpoint_health_url() + parameters)
+        for x in range(0, len(response)):
+            response[x] = responses.EndpointHealth(**response[x])
+        return response
+
+    def get_daily_traffic_counts(self, items_per_page: int = 10, page_offset: int = 0, start_time_min: datetime = None,
+                                 start_time_max: datetime = None, tz_string: str = None):
+        parameters = '?page[limit]={}&page[offset]={}'.format(items_per_page, page_offset)
+        if start_time_min:
+            parameters += '&start_time_min={}'.format(start_time_min.strftime(SKYETEL_DATESTRING))
+        if start_time_max:
+            parameters += '&start_time_max={}'.format(start_time_max.strftime(SKYETEL_DATESTRING))
+        if tz_string:
+            parameters += '&tz={}'.format(tz_string)
+        response = self.__make_api_request('GET', self.__url.traffic_count_url() + parameters)
+        for x in range(0, len(response)):
+            response[x]['date'] = datetime.strptime(response[x]['date'], SKYETEL_DATESTRING)
+            response[x] = responses.TrafficCount(**response[x])
+        return response
+
+    def get_daily_traffic_channels(self, items_per_page: int = 10, page_offset: int = 0,
+                                   start_time_min: datetime = None,
+                                   start_time_max: datetime = None, tz_string: str = None):
+        parameters = '?page[limit]={}&page[offset]={}'.format(items_per_page, page_offset)
+        if start_time_min:
+            parameters += '&start_time_min={}'.format(start_time_min.strftime(SKYETEL_DATESTRING))
+        if start_time_max:
+            parameters += '&start_time_max={}'.format(start_time_max.strftime(SKYETEL_DATESTRING))
+        if tz_string:
+            parameters += '&tz={}'.format(tz_string)
+        response = self.__make_api_request('GET', self.__url.channel_count_url() + parameters)
+        for x in range(0, len(response)):
+            response[x]['date'] = datetime.strptime(response[x]['date'], SKYETEL_DATESTRING)
+            response[x]['channel_count'] = int(response[x]['channel_count'])
+            response[x] = responses.ChannelCount(**response[x])
+        return response
+
+    def get_hourly_call_count(self, items_per_page: int = 10, page_offset: int = 0,
+                              start_time_min: datetime = None, start_time_max: datetime = None, tz_string: str = None):
+        parameters = '?page[limit]={}&page[offset]={}'.format(items_per_page, page_offset)
+        if start_time_min:
+            parameters += '&start_time_min={}'.format(start_time_min.strftime(SKYETEL_DATESTRING))
+        if start_time_max:
+            parameters += '&start_time_max={}'.format(start_time_max.strftime(SKYETEL_DATESTRING))
+        if tz_string:
+            parameters += '&tz={}'.format(tz_string)
+        response = self.__make_api_request('GET', self.__url.traffic_hourly_url() + parameters)
+        for x in range(0, len(response)):
+            response[x]['date'] = datetime.strptime(response[x]['date'], SKYETEL_DATESTRING)
+            response[x]['call_count'] = int(response[x]['call_count'])
+            response[x] = responses.CallCount(**response[x])
         return response
