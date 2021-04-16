@@ -8,3 +8,7 @@ class Unavailable(Error):
 
 class APIError(Error):
     pass
+
+
+class DataValidityError(Error):
+    pass
