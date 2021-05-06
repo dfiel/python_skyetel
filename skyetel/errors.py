@@ -10,5 +10,5 @@ class APIError(Error):
     pass
 
 
-class DataValidityError(Error):
+class ValidationError(Error):
     pass

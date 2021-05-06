@@ -1,4 +1,4 @@
-from skyetel import Skyetel
+from skyetel import *
 from credentials import *
 
 

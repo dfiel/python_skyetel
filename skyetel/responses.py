@@ -306,24 +306,24 @@ class PhoneNumberFilter:
 
     def validate(self):
         if (self.rateCenter and self.city) or (self.rateCenter and self.postalCode) or (self.city and self.postalCode):
-            raise errors.DataValidityError("Rate center, city, and postal code are mutually exclusive")
+            raise errors.ValidationError("Rate center, city, and postal code are mutually exclusive")
 
         if self.city and not self.states:
-            raise errors.DataValidityError("If city is specified, the state must be specified")
+            raise errors.ValidationError("If city is specified, the state must be specified")
 
         if self.radius and not((self.city and self.province) or self.postalCode):
-            raise errors.DataValidityError("Radius is only valid if city and province or zip are specified")
+            raise errors.ValidationError("Radius is only valid if city and province or zip are specified")
 
         if (self.radius and self.localCallingArea) or (self.radius and self.sequential) or (self.localCallingArea
                                                                                             and self.sequential):
-            raise errors.DataValidityError("Radius, local, and sequential are mutually exclusive")
+            raise errors.ValidationError("Radius, local, and sequential are mutually exclusive")
 
         if self.localCallingArea and not (self.tnMask or self.tnWildcard or self.rateCenter
                                           or (self.city and self.province) or self.postalCode):
-            err = "If local is specified, one of the following must be true:\n tnMask or tnWildcard specify the " \
-                  "NPANXX (first six digits)\n rateCenter is specified\n city and province are specified (without a " \
-                  "radius)\n postal Code is specified (without a radius) "
-            raise errors.DataValidityError(err)
+            err = "If local is specified, one of the following must be true:\n  tnMask or tnWildcard specify the " \
+                  "NPANXX (first six digits)\n  rateCenter is specified\n  city and province are specified (without a" \
+                  " radius)\n  postal Code is specified (without a radius)"
+            raise errors.ValidationError(err)
 
     def params(self):
         self.validate()
@@ -520,4 +520,78 @@ class TenantInvoice:
     invoice_status: str
     scheduled_date: datetime
     stripe_invoice_id: str
+
+
+@dataclass
+class TenantInvoiceProduct:
+    description: str
+    billing_product_id: int
+    quantity: int
+    unit_cost: float
+    markup: float
+
+
+@dataclass
+class TenantBillingProfile:
+    include_taxes: bool
+    auto_charge: bool
+    billing_date: int
+    terms: int
+    tax_exempt_code: str
+    currency: str
+    billing_products: List[TenantInvoiceProduct]
+
+
+@dataclass(frozen=True)
+class TenantBillingProduct:
+    id: int
+    has_mapping: bool
+    product_name: str
+    description: str
+    product_code: str
+    service_code: str
+
+
+@dataclass(frozen=True)
+class ExtendedTenant:
+    id: int
+    tenant_code: str
+    transcription_password: str
+    transcription_username: str
+    address1: str
+    address2: str
+    city: str
+    state: str
+    country: str
+    postal_code: str
+    name: str
+    phonenumber: int
+    billing_email: str
+    billing_profile: TenantBillingProfile
+    stripe_cust_id: str
+    contact_person: str
+    contact_phonenumber: int
+    date_added: datetime
+    archived: None
+    org: Organization = None
+    previous_month: str = None
+    previous_month_total_cost: float = None
+    previous_month_peak_channels: int = None
+
+
+@dataclass
+class CreateTenant:
+    tenant_code: str
+    address1: str
+    address2: str
+    city: str
+    state: str
+    country: str
+    postal_code: str
+    name: str
+    phonenumber: int
+    billing_email: str
+    billing_profile: TenantBillingProfile
+    contact_person: str
+    contact_phonenumber: int
 

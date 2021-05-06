@@ -7,7 +7,7 @@ from dataclasses import asdict
 from . import errors, urls, responses
 
 SKYETEL_DATESTRING = '%Y-%m-%dT%H:%M:%S+00:00'
-SKYETEL_TIMESTRING = '%H:%M:%S+00:00'
+SKYETEL_TIMESTRING = SKYETEL_DATESTRING[9:]
 
 
 class Skyetel:
@@ -23,7 +23,7 @@ class Skyetel:
     def __make_api_request(self, request_type, endpoint, data=None, json=None):
         try:
             if request_type == 'GET':
-                response = self.__session.get(endpoint)
+                response = self.__session.get(endpoint, data=data, json=json)
 
             elif request_type == 'POST':
                 response = self.__session.post(endpoint, data=data, json=json)
@@ -31,15 +31,18 @@ class Skyetel:
             elif request_type == 'PATCH':
                 response = self.__session.patch(endpoint, data=data, json=json)
 
+            elif request_type == 'DELETE':
+                response = self.__session.delete(endpoint, data=data, json=json)
+
             else:
-                raise AttributeError('Invalid Request Type')
+                raise errors.ValidationError('Invalid Request Type')
 
             if response.status_code != 200:
                 content = response.json()
                 raise errors.APIError(content['ERROR'])
 
         except (requests.ConnectionError, requests.Timeout) as e:
-            raise errors.Unavailable() from e
+            raise errors.Unavailable('API Unavailable: {}'.format(e)) from None
 
         return response.json()
 
@@ -71,9 +74,7 @@ class Skyetel:
                 response[x]['start_time'] = datetime.strptime(response[x]['start_time'], SKYETEL_DATESTRING)
                 response[x]['org'] = responses.Organization(**response[x]['org'])
                 response[x] = responses.AudioRecording(**response[x])
-            return response
-        else:
-            return None
+        return response
 
     def get_audio_recording_url(self, recording_id):
         """
@@ -82,7 +83,7 @@ class Skyetel:
         :return: string, URL of call recording audio file
         """
         response = self.__make_api_request('GET', self.__url.audio_recording_download_url(recording_id))
-        return response['download_url']
+        return response.get('download_url', None)
 
     def get_audio_transcriptions_list(self, items_per_page=10, page_offset=0, query=None, search=None, sort=None):
         """
@@ -112,9 +113,7 @@ class Skyetel:
                 response[x]['start_time'] = datetime.strptime(response[x]['start_time'], SKYETEL_DATESTRING)
                 response[x]['org'] = responses.Organization(**response[x]['org'])
                 response[x] = responses.AudioTranscription(**response[x])
-            return response
-        else:
-            return None
+        return response
 
     def get_audio_transcription_url(self, transcription_id):
         """
@@ -123,7 +122,7 @@ class Skyetel:
         :return: string, URL of call transcription text log
         """
         response = self.__make_api_request('GET', self.__url.audio_transcription_download_url(transcription_id))
-        return response['download_url']
+        return response.get('download_url', None)
 
     def get_audio_transcription_text(self, transcription_id):
         """
@@ -132,9 +131,12 @@ class Skyetel:
         :return: dict, dictionary of both parties text and timestamps
         """
         response = self.__make_api_request('GET', self.__url.audio_transcription_download_url(transcription_id))
-        url = response['download_url']
-        transcript = requests.get(url).json()
-        return transcript
+        url = response.get('download_url', '')
+        if url:
+            transcript = requests.get(url).json()
+            return transcript
+        else:
+            return None
 
     def get_billing_balance(self):
         """
@@ -142,7 +144,7 @@ class Skyetel:
         :return: float, billing balance remaining on the account
         """
         response = self.__make_api_request('GET', self.__url.balance_url())
-        return float(response['BALANCE'])
+        return float(response.get('BALANCE', 0))
 
     def get_organization_statement(self, year=None, month=None):
         """
@@ -159,19 +161,20 @@ class Skyetel:
         if month:
             parameters += 'month={}'.format(month)
         response = self.__make_api_request('GET', self.__url.organization_statement_url() + parameters)
-        if response['transactions']:
-            for x in range(0, len(response['transactions'])):
-                response['transactions'][x]['transaction_date'] = datetime.strptime(
-                    response['transactions'][x]['transaction_date'], SKYETEL_DATESTRING)
-                response['transactions'][x] = responses.StatementTransaction(**response['transactions'][x])
-        if response['taxes']:
-            for x in range(0, len(response['taxes'])):
-                response['taxes'][x] = responses.StatementTax(**response['taxes'][x])
-        if response['statement']:
-            response['statement']['totals']['phone_numbers'] = responses.PhoneNumberTotals(
-                **response['statement']['totals']['phone_numbers'])
-            response['statement'] = responses.StatementTotals(**response['statement']['totals'])
-        response = responses.BillingStatement(**response)
+        if response:
+            if response['transactions']:
+                for x in range(0, len(response['transactions'])):
+                    response['transactions'][x]['transaction_date'] = datetime.strptime(
+                        response['transactions'][x]['transaction_date'], SKYETEL_DATESTRING)
+                    response['transactions'][x] = responses.StatementTransaction(**response['transactions'][x])
+            if response['taxes']:
+                for x in range(0, len(response['taxes'])):
+                    response['taxes'][x] = responses.StatementTax(**response['taxes'][x])
+            if response['statement']:
+                response['statement']['totals']['phone_numbers'] = responses.PhoneNumberTotals(
+                    **response['statement']['totals']['phone_numbers'])
+                response['statement'] = responses.StatementTotals(**response['statement']['totals'])
+            response = responses.BillingStatement(**response)
         return response
 
     def get_endpoints_list(self, items_per_page=10, page_offset=0):
@@ -183,11 +186,12 @@ class Skyetel:
         """
         parameters = '?page[limit]={}&page[offset]={}'.format(items_per_page, page_offset)
         response = self.__make_api_request('GET', self.__url.endpoints_url() + parameters)
-        for x in range(0, len(response)):
-            response[x]['endpoint_group'] = responses.EndpointGroup(**response[x]['endpoint_group'])
-            response[x]['org'] = responses.Organization(org_id=response[x]['org']['id'],
-                                                        org_name=response[x]['org']['name'])
-            response[x] = responses.Endpoint(**response[x])
+        if response:
+            for x in range(0, len(response)):
+                response[x]['endpoint_group'] = responses.EndpointGroup(**response[x]['endpoint_group'])
+                response[x]['org'] = responses.Organization(org_id=response[x]['org']['id'],
+                                                            org_name=response[x]['org']['name'])
+                response[x] = responses.Endpoint(**response[x])
         return response
 
     def create_endpoint(self, ip, priority, description, endpoint_group_id, endpoint_group_name, port=5060,
@@ -206,10 +210,11 @@ class Skyetel:
         parameters = {'ip': ip, 'port': port, 'transport': transport, 'priority': priority, 'description': description,
                       'endpoint_group_id': endpoint_group_id, 'endpoint_group_name': endpoint_group_name}
         response = self.__make_api_request('POST', self.__url.endpoints_url(), data=parameters)
-        response['endpoint_group'] = responses.EndpointGroup(**response['endpoint_group'])
-        response['org'] = responses.Organization(org_id=response['org']['id'],
-                                                 org_name=response['org']['name'])
-        response = responses.Endpoint(**response)
+        if response:
+            response['endpoint_group'] = responses.EndpointGroup(**response['endpoint_group'])
+            response['org'] = responses.Organization(org_id=response['org']['id'],
+                                                     org_name=response['org']['name'])
+            response = responses.Endpoint(**response)
         return response
 
     def update_endpoint(self, endpoint_id, ip, priority, description, endpoint_group_id, endpoint_group_name, port=5060,
@@ -229,10 +234,11 @@ class Skyetel:
         parameters = {'ip': ip, 'port': port, 'transport': transport, 'priority': priority, 'description': description,
                       'endpoint_group_id': endpoint_group_id, 'endpoint_group_name': endpoint_group_name}
         response = self.__make_api_request('PATCH', self.__url.endpoint_url(endpoint_id), data=parameters)
-        response['endpoint_group'] = responses.EndpointGroup(**response['endpoint_group'])
-        response['org'] = responses.Organization(org_id=response['org']['id'],
-                                                 org_name=response['org']['name'])
-        response = responses.Endpoint(**response)
+        if response:
+            response['endpoint_group'] = responses.EndpointGroup(**response['endpoint_group'])
+            response['org'] = responses.Organization(org_id=response['org']['id'],
+                                                     org_name=response['org']['name'])
+            response = responses.Endpoint(**response)
         return response
 
     def get_phonenumber_e911(self, phonenumber_id):
@@ -242,7 +248,8 @@ class Skyetel:
         :return: E911Address, object representation of the associated E911 Address
         """
         response = self.__make_api_request('GET', self.__url.phonenumber_e911address_url(phonenumber_id))
-        response = responses.E911Address(**response)
+        if response:
+            response = responses.E911Address(**response)
         return response
 
     def create_phonenumber_e911(self, phonenumber_id, caller_name, address1, address2, community, state, postal_code):
@@ -261,7 +268,8 @@ class Skyetel:
                       'state': state, 'postal_code': postal_code}
         response = self.__make_api_request('POST', self.__url.phonenumber_e911address_url(phonenumber_id),
                                            data=parameters)
-        response = responses.E911Address(**response)
+        if response:
+            response = responses.E911Address(**response)
         return response
 
     def update_phonenumber_e911(self, phonenumber_id: int, caller_name, address1, address2, community, state,
@@ -281,7 +289,8 @@ class Skyetel:
                       'state': state, 'postal_code': postal_code}
         response = self.__make_api_request('PATCH', self.__url.phonenumber_e911address_url(phonenumber_id),
                                            data=parameters)
-        response = responses.E911Address(**response)
+        if response:
+            response = responses.E911Address(**response)
         return response
 
     def get_phonenumbers(self, items_per_page=10, page_offset=0, query: str = None, search: Dict = None,
@@ -306,28 +315,29 @@ class Skyetel:
             for x in range(1, len(sort)):
                 parameters += ',{}'.format(sort[x])
         response = self.__make_api_request('GET', self.__url.phonenumbers_url() + parameters)
-        for x in range(0, len(response)):
-            response[x]['number'] = int(response[x]['number'])
-            if response[x]['forward']:
-                response[x]['forward'] = int(response[x]['forward'])
-            if response[x]['failover']:
-                response[x]['failover'] = int(response[x]['failover'])
-            if response[x]['endpoint_group']:
-                response[x]['endpoint_group'] = responses.EndpointGroup(**response[x]['endpoint_group'])
-            if response[x]['tenant']:
-                response[x]['tenant'] = responses.Tenant(**response[x]['tenant'])
-            if response[x]['origination']:
-                response[x]['origination'] = responses.Origination(**response[x]['origination'])
-            if response[x]['e911address']:
-                response[x]['e911address'] = responses.E911Address(**response[x]['e911address'])
-            response[x]['intl_balance'] = float(response[x]['intl_balance'])
-            response[x]['intl_reserve'] = float(response[x]['intl_reserve'])
-            response[x]['org']['account_number'] = int(response[x]['org']['account_number'])
-            response[x]['org']['support_pin'] = int(response[x]['org']['support_pin'])
-            response[x]['org']['balance'] = float(response[x]['org']['balance'])
-            response[x]['org']['auto_recharge_reserve'] = float(response[x]['org']['auto_recharge_reserve'])
-            response[x]['org'] = responses.ExtendedOrganization(**response[x]['org'])
-            response[x] = responses.PhoneNumber(**response[x])
+        if response:
+            for x in range(0, len(response)):
+                response[x]['number'] = int(response[x]['number'])
+                if response[x]['forward']:
+                    response[x]['forward'] = int(response[x]['forward'])
+                if response[x]['failover']:
+                    response[x]['failover'] = int(response[x]['failover'])
+                if response[x]['endpoint_group']:
+                    response[x]['endpoint_group'] = responses.EndpointGroup(**response[x]['endpoint_group'])
+                if response[x]['tenant']:
+                    response[x]['tenant'] = responses.Tenant(**response[x]['tenant'])
+                if response[x]['origination']:
+                    response[x]['origination'] = responses.Origination(**response[x]['origination'])
+                if response[x]['e911address']:
+                    response[x]['e911address'] = responses.E911Address(**response[x]['e911address'])
+                response[x]['intl_balance'] = float(response[x]['intl_balance'])
+                response[x]['intl_reserve'] = float(response[x]['intl_reserve'])
+                response[x]['org']['account_number'] = int(response[x]['org']['account_number'])
+                response[x]['org']['support_pin'] = int(response[x]['org']['support_pin'])
+                response[x]['org']['balance'] = float(response[x]['org']['balance'])
+                response[x]['org']['auto_recharge_reserve'] = float(response[x]['org']['auto_recharge_reserve'])
+                response[x]['org'] = responses.ExtendedOrganization(**response[x]['org'])
+                response[x] = responses.PhoneNumber(**response[x])
         return response
 
     def create_off_network_phonenumber(self, number: str):
@@ -338,7 +348,8 @@ class Skyetel:
         """
         parameters = {'number': str(number)}
         response = self.__make_api_request('POST', self.__url.phonenumbers_offnetwork_url(), json=parameters)
-        response = responses.OffNetworkPhoneNumber(**response)
+        if response:
+            response = responses.OffNetworkPhoneNumber(**response)
         return response
 
     def update_phonenumber(self, phonenumber_id: int, update_data: responses.PhoneNumberUpdate):
@@ -350,7 +361,8 @@ class Skyetel:
         """
         data = update_data.as_dict()
         response = self.__make_api_request('PATCH', self.__url.phonenumber_url(phonenumber_id), data=data)
-        response = responses.PhoneNumberUpdate(**response)
+        if response:
+            response = responses.PhoneNumberUpdate(**response)
         return response
 
     def get_available_phonenumbers(self, search_filter: responses.PhoneNumberFilter = None):
@@ -376,13 +388,14 @@ class Skyetel:
         if state:
             params = '?state={}'.format(state)
         response = self.__make_api_request('GET', self.__url.phonenumbers_ratecenters_url() + params)
-        for x in range(0, len(response)):
-            response[x] = responses.RateCenter(**response[x])
+        if response:
+            for x in range(0, len(response)):
+                response[x] = responses.RateCenter(**response[x])
         return response
 
     def order_phonenumbers(self, number_list: List[responses.NumberPurchase]):
         """
-            Order Phone Numbers
+            UNTESTED: Order Phone Numbers
         :param number_list: list[NumberPurchase], List of NumberPurchase objects with associated MOU
         :return: list[PhoneNumberUpdate], List of PhoneNumberUpdate objects
         """
@@ -390,8 +403,9 @@ class Skyetel:
         for num in number_list:
             data['numbers[{}][mou]'.format(num.number)] = num.mou
         response = self.__make_api_request('POST', self.__url.phonenumbers_order_url(), data=data)
-        for x in range(0, len(response)):
-            response[x] = responses.PhoneNumberUpdate(**response[x])
+        if response:
+            for x in range(0, len(response)):
+                response[x] = responses.PhoneNumberUpdate(**response[x])
         return response
 
     def get_local_phonunumbers_count(self):
@@ -400,7 +414,7 @@ class Skyetel:
         :return: int, Count of local Phone Numbers
         """
         response = self.__make_api_request('GET', self.__url.phonenumbers_localcount_url())
-        return int(response['TOTAL'])
+        return int(response.get('TOTAL', 0))
 
     def get_tollfree_phonenumbers_count(self):
         """
@@ -408,7 +422,7 @@ class Skyetel:
         :return: int, Count of Toll-Free Phone Numbers
         """
         response = self.__make_api_request('GET', self.__url.phonenumbers_tfcount_url())
-        return int(response['TOTAL'])
+        return int(response.get('TOTAL', 0))
 
     def get_sms_receipts(self, items_per_page=10, page_offset=0, query: str = None, search: Dict = None,
                          sort: List = None):
@@ -432,15 +446,16 @@ class Skyetel:
             for x in range(1, len(sort)):
                 parameters += ',{}'.format(sort[x])
         response = self.__make_api_request('GET', self.__url.smsreceipts_url() + parameters)
-        for x in range(0, len(response)):
-            response[x]['time'] = datetime.strptime(response[x]['time'], SKYETEL_DATESTRING)
-            response[x]['cost'] = float(response[x]['cost'])
-            response[x]['org']['account_number'] = int(response[x]['org']['account_number'])
-            response[x]['org']['support_pin'] = int(response[x]['org']['support_pin'])
-            response[x]['org']['balance'] = float(response[x]['org']['balance'])
-            response[x]['org']['auto_recharge_reserve'] = float(response[x]['org']['auto_recharge_reserve'])
-            response[x]['org'] = responses.ExtendedOrganization(**response[x]['org'])
-            response[x] = responses.SMSMessage(**response[x])
+        if response:
+            for x in range(0, len(response)):
+                response[x]['time'] = datetime.strptime(response[x]['time'], SKYETEL_DATESTRING)
+                response[x]['cost'] = float(response[x]['cost'])
+                response[x]['org']['account_number'] = int(response[x]['org']['account_number'])
+                response[x]['org']['support_pin'] = int(response[x]['org']['support_pin'])
+                response[x]['org']['balance'] = float(response[x]['org']['balance'])
+                response[x]['org']['auto_recharge_reserve'] = float(response[x]['org']['auto_recharge_reserve'])
+                response[x]['org'] = responses.ExtendedOrganization(**response[x]['org'])
+                response[x] = responses.SMSMessage(**response[x])
         return response
 
     def get_endpoint_health(self, items_per_page: int = 10, page_offset: int = 0):
@@ -452,8 +467,9 @@ class Skyetel:
         """
         parameters = '?page[limit]={}&page[offset]={}'.format(items_per_page, page_offset)
         response = self.__make_api_request('GET', self.__url.endpoint_health_url() + parameters)
-        for x in range(0, len(response)):
-            response[x] = responses.EndpointHealth(**response[x])
+        if response:
+            for x in range(0, len(response)):
+                response[x] = responses.EndpointHealth(**response[x])
         return response
 
     def get_daily_traffic_counts(self, items_per_page: int = 10, page_offset: int = 0, start_time_min: datetime = None,
@@ -475,9 +491,10 @@ class Skyetel:
         if tz_string:
             parameters += '&tz={}'.format(tz_string)
         response = self.__make_api_request('GET', self.__url.traffic_count_url() + parameters)
-        for x in range(0, len(response)):
-            response[x]['date'] = datetime.strptime(response[x]['date'], SKYETEL_DATESTRING)
-            response[x] = responses.TrafficCount(**response[x])
+        if response:
+            for x in range(0, len(response)):
+                response[x]['date'] = datetime.strptime(response[x]['date'], SKYETEL_DATESTRING)
+                response[x] = responses.TrafficCount(**response[x])
         return response
 
     def get_daily_traffic_channels(self, items_per_page: int = 10, page_offset: int = 0,
@@ -500,10 +517,11 @@ class Skyetel:
         if tz_string:
             parameters += '&tz={}'.format(tz_string)
         response = self.__make_api_request('GET', self.__url.channel_count_url() + parameters)
-        for x in range(0, len(response)):
-            response[x]['date'] = datetime.strptime(response[x]['date'], SKYETEL_DATESTRING)
-            response[x]['channel_count'] = int(response[x]['channel_count'])
-            response[x] = responses.ChannelCount(**response[x])
+        if response:
+            for x in range(0, len(response)):
+                response[x]['date'] = datetime.strptime(response[x]['date'], SKYETEL_DATESTRING)
+                response[x]['channel_count'] = int(response[x]['channel_count'])
+                response[x] = responses.ChannelCount(**response[x])
         return response
 
     def get_hourly_call_count(self, items_per_page: int = 10, page_offset: int = 0,
@@ -525,10 +543,11 @@ class Skyetel:
         if tz_string:
             parameters += '&tz={}'.format(tz_string)
         response = self.__make_api_request('GET', self.__url.traffic_hourly_url() + parameters)
-        for x in range(0, len(response)):
-            response[x]['date'] = datetime.strptime(response[x]['date'], SKYETEL_TIMESTRING)
-            response[x]['call_count'] = int(response[x]['call_count'])
-            response[x] = responses.CallCount(**response[x])
+        if response:
+            for x in range(0, len(response)):
+                response[x]['date'] = datetime.strptime(response[x]['date'], SKYETEL_TIMESTRING)
+                response[x]['call_count'] = int(response[x]['call_count'])
+                response[x] = responses.CallCount(**response[x])
         return response
 
     def get_tenant_statements(self, year=None, month=None):
@@ -545,27 +564,98 @@ class Skyetel:
                 parameters += '&'
         if month:
             parameters += 'month={}'.format(month)
-        response = self.__make_api_request('GET', self.__url.tenant_statements_url()+parameters)
-        for x in range(0, len(response)):
-            response[x]['month'] = datetime.strptime(response[x]['month'], SKYETEL_DATESTRING)
-            response[x]['org'] = responses.Organization(org_id=response[x]['org']['id'],
-                                                        org_name=response[x]['org']['org_name'])
-            response[x]['tenant'] = responses.Tenant(**response[x]['tenant'])
-            response[x]['fields']['totals']['phone_numbers'] = \
-                responses.TenantPhoneNumberTotals(**response[x]['fields']['totals']['phone_numbers'])
-            response[x]['fields']['totals'] = responses.TenantStatementTotals(**response[x]['fields']['totals'])
-            response[x] = responses.TenantStatement(id=response[x]['id'], month=response[x]['month'],
-                                                    org=response[x]['org'], tenant=response[x]['tenant'],
-                                                    totals=response[x]['fields']['totals'])
+        response = self.__make_api_request('GET', self.__url.tenant_statements_url() + parameters)
+        if response:
+            for x in range(0, len(response)):
+                response[x]['month'] = datetime.strptime(response[x]['month'], SKYETEL_DATESTRING)
+                response[x]['org'] = responses.Organization(org_id=response[x]['org']['id'],
+                                                            org_name=response[x]['org']['org_name'])
+                response[x]['tenant'] = responses.Tenant(**response[x]['tenant'])
+                response[x]['fields']['totals']['phone_numbers'] = \
+                    responses.TenantPhoneNumberTotals(**response[x]['fields']['totals']['phone_numbers'])
+                response[x]['fields']['totals'] = responses.TenantStatementTotals(**response[x]['fields']['totals'])
+                response[x] = responses.TenantStatement(id=response[x]['id'], month=response[x]['month'],
+                                                        org=response[x]['org'], tenant=response[x]['tenant'],
+                                                        totals=response[x]['fields']['totals'])
         return response
 
     def get_tenant_invoices(self):
         """
-            Get all Tenant Invoices
+            UNTESTED: Get all Tenant Invoices
         :return: list[TenantInvoice], list of TenantInvoice objects
         """
         response = self.__make_api_request('GET', self.__url.tenant_invoices_url())
-        for x in range(0, len(response)):
-            response[x]['scheduled_date'] = datetime.strptime(response[x]['scheduled_date'], SKYETEL_TIMESTRING)
-            response[x] = responses.TenantInvoice(**response[x])
+        if response:
+            for x in range(0, len(response)):
+                response[x]['scheduled_date'] = datetime.strptime(response[x]['scheduled_date'], SKYETEL_TIMESTRING)
+                response[x] = responses.TenantInvoice(**response[x])
+        return response
+
+    def create_onetime_tenant_invoice(self, tenant_id: int, billing: responses.TenantBillingProfile):
+        """
+            UNTESTED: Create a One-Time Tenant Invoice from a Tenant Billing Profile
+        :param tenant_id: integer, ID of the Tenant for the Invoice
+        :param billing: TenantBillingProfile, a TenantBillingProfile object
+        :return: string, Stripe Invoice ID
+        """
+        data = asdict(billing)
+        for x in range(0, len(data.get('billing_products', []))):
+            data['billing_products'][x] = asdict(data['billing_products'][x])
+        response = self.__make_api_request('POST', self.__url.tenant_invoice_url(tenant_id), data=data)
+        return response.get('stripe_invoice_id', None)
+
+    def void_tenant_invoice(self, tenant_id: int):
+        """
+            UNTESTED: Void an Invoice for a Tenant
+        :param tenant_id: integer, ID of the Tenant
+        :return: None
+        """
+        self.__make_api_request('DELETE', self.__url.tenant_invoice_url(tenant_id))
+        return None
+
+    def get_billing_products(self):
+        """
+            UNTESTED: Get a list of Tenant Billing Products
+        :return: list[TenantBillingProduct], List of TenantBillingProduct objects
+        """
+        response = self.__make_api_request('GET', self.__url.tenant_products_url())
+        if response:
+            for x in range(0, len(response)):
+                response[x] = responses.TenantBillingProduct(**response[x])
+        return response
+
+    def get_tenants(self, items_per_page=10, page_offset=0, query: str = None, search: Dict = None, sort: List = None):
+        """
+            Get a list of Tenants
+        :param items_per_page: integer, defaults to 10 records returned per request
+        :param page_offset: integer, combines with items_per_page
+        :param query: string, wildcard search on all string fields
+        :param search: dict, format 'field':'query'
+        :param sort: list[string], list of fields to sort, prefix a '-' for descending sort
+        :return: list[ExtendedTenant], list of ExtendedTenant objects
+        """
+        parameters = '?page[limit]={}&page[offset]={}'.format(items_per_page, page_offset)
+        if query:
+            parameters += '&filter[query]={}'.format(query)
+        if search:
+            for field in search:
+                parameters += '&filter[{}]={}'.format(field, search[field])
+        if sort:
+            parameters += '&sort={}'.format(sort[0])
+            for x in range(1, len(sort)):
+                parameters += ',{}'.format(sort[x])
+        response = self.__make_api_request('GET', self.__url.tenants_url()+parameters)
+        if response:
+            for x in range(0, len(response)):
+                response[x]['phonenumber'] = int(response[x]['phonenumber'])
+                if response[x]['billing_profile']['billing_products']:
+                    for y in range(0, len(response[x]['billing_profile']['billing_products'])):
+                        response[x]['billing_profile']['billing_products'][x] = responses.TenantInvoiceProduct(
+                            **response[x]['billing_profile']['billing_products'][x])
+                response[x]['billing_profile'] = responses.TenantBillingProfile(**response[x]['billing_profile'])
+                response[x]['contact_phonenumber'] = int(response[x]['contact_phonenumber'])
+                response[x]['date_added'] = datetime.strptime(response[x]['date_added'], SKYETEL_DATESTRING)
+                response[x]['org'] = responses.Organization(org_id=response[x]['org']['id'],
+                                                            org_name=response[x]['org']['org_name'])
+                response[x] = responses.ExtendedTenant(**response[x])
         return response
